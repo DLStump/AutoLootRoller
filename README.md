@@ -30,7 +30,7 @@ If `Greed` is selected but unavailable, the addon rolls Pass.
 ## Install
 
 1. Copy this repository folder to `World of Warcraft\Interface\AddOns\AutoLootRoller`.
-2. Restart the client or type `/reload` after logging in.
+2. Restart the client or type `/reload ui` after logging in.
 3. Configure it from `Esc > Interface > AddOns > Auto Loot Roller`.
 
 ## Slash Commands
