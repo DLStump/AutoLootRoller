@@ -1,0 +1,8 @@
+## Interface: 30300
+## Title: Auto Loot Roller
+## Notes: Automatically passes, needs, or greeds on selected loot roll qualities.
+## Author: Codex
+## Version: 1.0.5
+## SavedVariables: AutoLootRollerDB
+
+AutoLootRoller.lua
