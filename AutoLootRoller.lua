@@ -14,6 +14,7 @@ local ROLL_GREED = 2
 
 local DEFAULTS = {
     enabled = true,
+    needList = "",
     actions = {
         [QUALITY_UNCOMMON] = "DEFAULT",
         [QUALITY_RARE] = "DEFAULT",
@@ -43,9 +44,12 @@ end
 
 local handledRolls = {}
 local pendingConfirms = {}
+local needListItemIDs = {}
+local needListItemNames = {}
+local needListDirty = true
 
 local function CopyDefaults()
-    local copy = { enabled = DEFAULTS.enabled, actions = {} }
+    local copy = { enabled = DEFAULTS.enabled, needList = DEFAULTS.needList, actions = {} }
     for quality, action in pairs(DEFAULTS.actions) do
         copy.actions[quality] = action
     end
@@ -53,7 +57,7 @@ local function CopyDefaults()
 end
 
 local function CopyConfig(source)
-    local copy = { enabled = source.enabled, actions = {} }
+    local copy = { enabled = source.enabled, needList = source.needList or "", actions = {} }
     for _, row in ipairs(QUALITY_ROWS) do
         copy.actions[row.quality] = source.actions[row.quality]
     end
@@ -71,6 +75,10 @@ local function ApplyDefaults(target)
             target.actions[quality] = action
         end
     end
+
+    if type(target.needList) ~= "string" then
+        target.needList = DEFAULTS.needList
+    end
 end
 
 local function InitializeDatabase()
@@ -84,6 +92,7 @@ local function InitializeDatabase()
 
     ApplyDefaults(AutoLootRollerDB)
     DB = AutoLootRollerDB
+    needListDirty = true
 end
 
 local function HideRollFrame(rollID)
@@ -131,13 +140,73 @@ local function ResolveRollType(actionKey, canNeed, canGreed)
     return nil
 end
 
+local function ExtractItemID(text)
+    if type(text) ~= "string" then
+        return nil
+    end
+
+    return text:match("item:(%d+)") or text:match("^%s*(%d+)%s*$")
+end
+
+local function ExtractItemName(text)
+    if type(text) ~= "string" then
+        return nil
+    end
+
+    return text:match("%[([^%]]+)%]")
+end
+
+local function RebuildNeedListLookup()
+    needListItemIDs = {}
+    needListItemNames = {}
+
+    local text = DB and DB.needList or ""
+    for line in string.gmatch(text .. "\n", "([^\r\n]*)[\r\n]") do
+        local itemID = ExtractItemID(line)
+        if itemID then
+            needListItemIDs[itemID] = true
+        end
+
+        local itemName = ExtractItemName(line)
+        if itemName then
+            needListItemNames[itemName] = true
+        end
+    end
+
+    needListDirty = false
+end
+
+local function IsNeedListed(itemLink, itemName)
+    if needListDirty then
+        RebuildNeedListLookup()
+    end
+
+    local itemID = ExtractItemID(itemLink)
+    if itemID and needListItemIDs[itemID] then
+        return true
+    end
+
+    return itemName and needListItemNames[itemName]
+end
+
 function AutoLootRoller:HandleLootRoll(rollID)
     if not DB or not DB.enabled or not rollID then
         return
     end
 
-    local _, _, _, quality, bindOnPickUp, canNeed, canGreed = GetLootRollItemInfo(rollID)
-    local actionKey = quality and DB.actions[quality]
+    local _, itemName, _, quality, bindOnPickUp, canNeed, canGreed = GetLootRollItemInfo(rollID)
+    local itemLink
+    if GetLootRollItemLink then
+        itemLink = GetLootRollItemLink(rollID)
+    end
+
+    local actionKey
+    if IsNeedListed(itemLink, itemName) then
+        actionKey = "NEED"
+    else
+        actionKey = quality and DB.actions[quality]
+    end
+
     if not actionKey then
         return
     end
@@ -202,6 +271,13 @@ local function SaveQualityAction(panel, quality, actionKey)
     DB.actions[quality] = actionKey
 end
 
+local function SaveNeedList(panel, text)
+    text = text or ""
+    panel.working.needList = text
+    DB.needList = text
+    needListDirty = true
+end
+
 local function Dropdown_OnClick(self)
     local dropdown = self.owner
     local actionKey = self.value
@@ -235,11 +311,19 @@ local function RefreshOptionsPanel(panel)
         UIDropDownMenu_SetSelectedValue(dropdown, actionKey)
         UIDropDownMenu_SetText(dropdown, GetActionLabel(actionKey))
     end
+
+    if panel.needListEditBox then
+        panel.refreshing = true
+        panel.needListEditBox:SetText(panel.working.needList or "")
+        panel.refreshing = false
+    end
 end
 
 local function ApplyOptionsPanel(panel)
     DB.enabled = panel.working.enabled and true or false
+    DB.needList = panel.working.needList or ""
     DB.actions = DB.actions or {}
+    needListDirty = true
 
     for _, row in ipairs(QUALITY_ROWS) do
         DB.actions[row.quality] = panel.working.actions[row.quality] or DEFAULTS.actions[row.quality]
@@ -248,10 +332,12 @@ end
 
 local function ResetOptionsPanel(panel)
     DB.enabled = DEFAULTS.enabled
+    DB.needList = DEFAULTS.needList
     DB.actions = {}
     for quality, action in pairs(DEFAULTS.actions) do
         DB.actions[quality] = action
     end
+    needListDirty = true
     RefreshOptionsPanel(panel)
 end
 
@@ -298,6 +384,55 @@ local function CreateOptionsPanel()
     note:SetWidth(520)
     note:SetJustifyH("LEFT")
     note:SetText("Default Prompt leaves Blizzard's normal roll prompt alone. If Need is unavailable, the addon rolls Greed if possible, otherwise Pass.")
+
+    local needListLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    needListLabel:SetPoint("TOPLEFT", note, "BOTTOMLEFT", 0, -18)
+    needListLabel:SetText("Need List")
+
+    local needListHelp = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    needListHelp:SetPoint("TOPLEFT", needListLabel, "BOTTOMLEFT", 0, -4)
+    needListHelp:SetWidth(520)
+    needListHelp:SetJustifyH("LEFT")
+    needListHelp:SetText("Paste client item links here, one per line. Matched items roll Need before quality rules.")
+
+    local needListBox = CreateFrame("Frame", "AutoLootRollerNeedListBox", panel)
+    needListBox:SetPoint("TOPLEFT", needListHelp, "BOTTOMLEFT", 0, -8)
+    needListBox:SetWidth(520)
+    needListBox:SetHeight(118)
+    needListBox:SetBackdrop({
+        bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = true,
+        tileSize = 16,
+        edgeSize = 16,
+        insets = { left = 4, right = 4, top = 4, bottom = 4 },
+    })
+    needListBox:SetBackdropColor(0, 0, 0, 0.35)
+
+    local needListScrollFrame = CreateFrame("ScrollFrame", "AutoLootRollerNeedListScrollFrame", needListBox, "UIPanelScrollFrameTemplate")
+    needListScrollFrame:SetPoint("TOPLEFT", 8, -8)
+    needListScrollFrame:SetPoint("BOTTOMRIGHT", -28, 8)
+
+    local needListEditBox = CreateFrame("EditBox", "AutoLootRollerNeedListEditBox", needListScrollFrame)
+    needListEditBox:SetMultiLine(true)
+    needListEditBox:SetAutoFocus(false)
+    needListEditBox:SetFontObject(ChatFontNormal)
+    needListEditBox:SetWidth(470)
+    needListEditBox:SetHeight(96)
+    needListEditBox:SetScript("OnEscapePressed", function(self)
+        self:ClearFocus()
+    end)
+    needListEditBox:SetScript("OnTextChanged", function(self)
+        local text = self:GetText() or ""
+        local _, lineCount = string.gsub(text, "\n", "\n")
+        self:SetHeight(math.max(96, (lineCount + 1) * 14))
+
+        if not panel.refreshing then
+            SaveNeedList(panel, text)
+        end
+    end)
+    needListScrollFrame:SetScrollChild(needListEditBox)
+    panel.needListEditBox = needListEditBox
 
     panel.refresh = function()
         RefreshOptionsPanel(panel)
