@@ -6,7 +6,7 @@ Auto Loot Roller is a World of Warcraft 3.3.5a addon that can automatically choo
 
 - Configurable from `Esc > Interface > AddOns > Auto Loot Roller`.
 - Per-quality behavior for green, blue, purple, and orange items.
-- Need List for item links that should always roll Need before quality rules.
+- Need List for item links or item names that should always roll Need before quality rules.
 - Supports `Default Prompt`, `Pass`, `Need`, and `Greed`.
 - Hides Blizzard roll prompts only when the addon auto-rolls.
 - Automatically accepts bind-on-pickup roll confirmations only for rolls initiated by the addon.
@@ -22,7 +22,7 @@ Auto Loot Roller is a World of Warcraft 3.3.5a addon that can automatically choo
 
 ## Roll Behavior
 
-Items in the Need List are matched by item ID from pasted client item links. A matched item rolls Need before the quality dropdown rules are checked.
+Items in the Need List are matched by item ID from client item links. Plain item names are also accepted as a fallback. A matched item rolls Need before the quality dropdown rules are checked.
 
 `Default Prompt` leaves Blizzard's normal loot roll prompt unchanged.
 
@@ -38,7 +38,7 @@ If `Greed` is selected but unavailable, the addon rolls Pass.
 
 ## Need List
 
-Paste client item links into the Need List box, one item per line. Shift-clicking an item while the Need List box has focus should insert the client item link.
+Click inside the Need List box first, then type item names or Shift-click in-game items to insert their client item links. Put one item per line.
 
 The list is saved with your addon settings.
 

@@ -278,6 +278,45 @@ local function SaveNeedList(panel, text)
     needListDirty = true
 end
 
+local originalChatEditInsertLink
+
+local function InsertNeedListLink(link)
+    local panel = AutoLootRoller.optionsPanel
+    local editBox = panel and panel.needListEditBox
+    if not link or not editBox or not editBox:IsVisible() or not panel:IsVisible() then
+        return false
+    end
+
+    if not editBox:HasFocus() and not panel.needListCapturesLinks then
+        return false
+    end
+
+    editBox:SetFocus()
+    local text = editBox:GetText() or ""
+    if text ~= "" and not string.find(text, "[\r\n]$") then
+        editBox:Insert("\n")
+    end
+
+    editBox:Insert(link)
+    editBox:Insert("\n")
+    return true
+end
+
+local function InstallNeedListLinkHook()
+    if originalChatEditInsertLink or not ChatEdit_InsertLink then
+        return
+    end
+
+    originalChatEditInsertLink = ChatEdit_InsertLink
+    ChatEdit_InsertLink = function(link, ...)
+        if InsertNeedListLink(link) then
+            return true
+        end
+
+        return originalChatEditInsertLink(link, ...)
+    end
+end
+
 local function Dropdown_OnClick(self)
     local dropdown = self.owner
     local actionKey = self.value
@@ -393,12 +432,13 @@ local function CreateOptionsPanel()
     needListHelp:SetPoint("TOPLEFT", needListLabel, "BOTTOMLEFT", 0, -4)
     needListHelp:SetWidth(520)
     needListHelp:SetJustifyH("LEFT")
-    needListHelp:SetText("Paste client item links here, one per line. Matched items roll Need before quality rules.")
+    needListHelp:SetText("Click this box to type item names or Shift-click client item links, one per line. Matched items roll Need before quality rules.")
 
     local needListBox = CreateFrame("Frame", "AutoLootRollerNeedListBox", panel)
     needListBox:SetPoint("TOPLEFT", needListHelp, "BOTTOMLEFT", 0, -8)
     needListBox:SetWidth(520)
     needListBox:SetHeight(118)
+    needListBox:EnableMouse(true)
     needListBox:SetBackdrop({
         bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -412,14 +452,36 @@ local function CreateOptionsPanel()
     local needListScrollFrame = CreateFrame("ScrollFrame", "AutoLootRollerNeedListScrollFrame", needListBox, "UIPanelScrollFrameTemplate")
     needListScrollFrame:SetPoint("TOPLEFT", 8, -8)
     needListScrollFrame:SetPoint("BOTTOMRIGHT", -28, 8)
+    needListScrollFrame:EnableMouse(true)
 
     local needListEditBox = CreateFrame("EditBox", "AutoLootRollerNeedListEditBox", needListScrollFrame)
+    needListEditBox:SetPoint("TOPLEFT", needListScrollFrame, "TOPLEFT", 0, 0)
     needListEditBox:SetMultiLine(true)
     needListEditBox:SetAutoFocus(false)
+    needListEditBox:EnableMouse(true)
     needListEditBox:SetFontObject(ChatFontNormal)
     needListEditBox:SetWidth(470)
     needListEditBox:SetHeight(96)
+    needListBox:SetScript("OnMouseDown", function()
+        panel.needListCapturesLinks = true
+        needListEditBox:SetFocus()
+    end)
+    needListScrollFrame:SetScript("OnMouseDown", function()
+        panel.needListCapturesLinks = true
+        needListEditBox:SetFocus()
+    end)
+    needListEditBox:SetScript("OnMouseDown", function(self)
+        panel.needListCapturesLinks = true
+        self:SetFocus()
+    end)
+    needListEditBox:SetScript("OnEditFocusGained", function()
+        panel.needListCapturesLinks = true
+    end)
+    needListEditBox:SetScript("OnEnterPressed", function(self)
+        self:Insert("\n")
+    end)
     needListEditBox:SetScript("OnEscapePressed", function(self)
+        panel.needListCapturesLinks = false
         self:ClearFocus()
     end)
     needListEditBox:SetScript("OnTextChanged", function(self)
@@ -446,8 +508,15 @@ local function CreateOptionsPanel()
     panel.default = function()
         ResetOptionsPanel(panel)
     end
+    panel:SetScript("OnHide", function(self)
+        self.needListCapturesLinks = false
+        if self.needListEditBox then
+            self.needListEditBox:ClearFocus()
+        end
+    end)
 
     InterfaceOptions_AddCategory(panel)
+    InstallNeedListLinkHook()
     RefreshOptionsPanel(panel)
     AutoLootRoller.optionsPanel = panel
 end
